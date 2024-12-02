@@ -1,4 +1,4 @@
-package part1
+package main
 
 import (
 	"bufio"
@@ -9,7 +9,7 @@ import (
 )
 
 func main() {
-	file, err := os.Open("input.txt")
+	file, err := os.Open("../../input.txt")
 	if err != nil {
 		fmt.Println("Error opening file:", err)
 		return
