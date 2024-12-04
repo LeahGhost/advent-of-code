@@ -1,47 +1,41 @@
 package main
 
 import (
-	"fmt"
 	"bufio"
+	"fmt"
 	"os"
 )
 
-func main() {
-	file, err := os.Open("input.txt")
+var directions = [][2]int{
+	{0, 1}, {1, 1}, {1, 0}, {1, -1},
+	{0, -1}, {-1, -1}, {-1, 0}, {-1, 1},
+}
+
+func loadFile() []string {
+	file, err := os.Open("../input.txt")
 	if err != nil {
-		fmt.Println(err)
-		return
+		panic(err)
 	}
 	defer file.Close()
 
 	var grid []string
-
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 		grid = append(grid, scanner.Text())
 	}
-
-	if err := scanner.Err(); err != nil {
-		fmt.Println(err)
-		return
-	}
-
-	word := "XMAS"
-	count := countWord(grid, word)
-	fmt.Println(count)
+	return grid
 }
 
-func countWord(grid []string, word string) int {
-	n := len(grid)
-	m := len(grid[0])
-	wordLen := len(word)
-	count := 0
-	dirs := [][2]int{{1, 0}, {0, 1}, {-1, 0}, {0, -1}, {1, 1}, {-1, -1}, {1, -1}, {-1, 1}}
+func isValid(row, col, numRows, numCols int) bool {
+	return row >= 0 && row < numRows && col >= 0 && col < numCols
+}
 
-	for i := 0; i < n; i++ {
-		for j := 0; j < m; j++ {
-			for _, dir := range dirs {
-				if checkWord(grid, word, i, j, dir[0], dir[1], n, m, wordLen) {
+func part1(grid []string, numRows, numCols int) int {
+	count := 0
+	for row := 0; row < numRows; row++ {
+		for col := 0; col < numCols; col++ {
+			for _, direction := range directions {
+				if checkDirection(grid, row, col, direction[0], direction[1], numRows, numCols, "XMAS") {
 					count++
 				}
 			}
@@ -50,15 +44,58 @@ func countWord(grid []string, word string) int {
 	return count
 }
 
-
-func checkWord(grid []string, word string, i, j, dx, dy, n, m, wordLen int) bool {
-	for k := 0; k < wordLen; k++ {
-		nx, ny := i+dx*k, j+dy*k
-		if nx < 0 || nx >= n || ny < 0 || ny >= m || grid[nx][ny] != word[k] {
+func checkDirection(grid []string, startX, startY, deltaX, deltaY, numRows, numCols int, word string) bool {
+	for i := 0; i < len(word); i++ {
+		currRow, currCol := startX+i*deltaX, startY+i*deltaY
+		if !isValid(currRow, currCol, numRows, numCols) || grid[currRow][currCol] != word[i] {
 			return false
 		}
 	}
 	return true
 }
-	
 
+// part2 checks for the presence of the patterns "MAS" or "SAM" in an X pattern within a grid of strings.
+func part2(grid []string, numRows, numCols int) int {
+	count := 0
+	checkDirection := func(startX, startY, deltaX, deltaY int) bool {
+		startX = startX - deltaX
+		startY = startY - deltaY
+		word := ""
+		for i := 0; i < 3; i++ {
+			currRow, currCol := startX+i*deltaX, startY+i*deltaY
+			if !isValid(currRow, currCol, numRows, numCols) {
+				return false
+			}
+			word += string(grid[currRow][currCol])
+		}
+		return word == "MAS" || word == "SAM"
+	}
+
+	checkXPattern := func(row, col int) bool {
+		if grid[row][col] != 'A' {
+			return false
+		}
+		// Check all four diagonal directions for the patterns "MAS" or "SAM"
+		return checkDirection(row, col, -1, 1) &&  // Top-left to bottom-right
+			checkDirection(row, col, 1, -1) &&   // Bottom-right to top-left
+			checkDirection(row, col, -1, -1) &&  // Top-right to bottom-left
+			checkDirection(row, col, 1, 1)       // Bottom-left to top-right
+	}
+
+	for row := 0; row < numRows; row++ {
+		for col := 0; col < numCols; col++ {
+			if checkXPattern(row, col) {
+				count++
+			}
+		}
+	}
+	return count
+}
+
+func main() {
+	grid := loadFile()
+	numRows := len(grid)
+	numCols := len(grid[0])
+	fmt.Println(part1(grid, numRows, numCols))
+	fmt.Println(part2(grid, numRows, numCols))
+}
