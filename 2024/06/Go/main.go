@@ -1,101 +1,135 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"strings"
 )
 
-var directions = [4][2]int{
-	{-1, 0},
-	{0, 1},
-	{1, 0},
-	{0, -1}, 
+func main() {
+	input, err := os.ReadFile("../input.txt")
+	if err != nil {
+		panic(err)
+	}
+
+	part1, part2 := execute(string(input))
+	fmt.Printf("Part 1: %d\n", part1)
+	fmt.Printf("Part 2: %d\n", part2)
 }
 
-func parseInput(filename string) ([][]string, [2]int, int, error) {
-	file, err := os.Open(filename)
-	if err != nil {
-		return nil, [2]int{}, 0, err
-	}
-	defer file.Close()
+func execute(input string) (int, int) {
+	grid := parseGrid(input)
+	part1, _ := trackGuard(grid)
 
-	var grid [][]string
-	var guardPos [2]int
-	var guardDir int
+	part2 := 0
+	for y := 0; y < len(grid); y++ {
+		for x := 0; x < len(grid[y]); x++ {
+			if grid.at(x, y) == '.' {
+				updatedGrid := parseGrid(input)
+				updatedGrid[y][x] = '#'
 
-	scanner := bufio.NewScanner(file)
-	row := 0
-	for scanner.Scan() {
-		line := scanner.Text()
-		grid = append(grid, strings.Split(line, ""))
-		for col, cell := range grid[row] {
-			switch cell {
-			case "^":
-				guardPos = [2]int{row, col}
-				guardDir = 0
-			case ">":
-				guardPos = [2]int{row, col}
-				guardDir = 1
-			case "v":
-				guardPos = [2]int{row, col}
-				guardDir = 2
-			case "<":
-				guardPos = [2]int{row, col}
-				guardDir = 3
+				_, loop := trackGuard(updatedGrid)
+				if loop {
+					part2++
+				}
 			}
 		}
-		row++
 	}
 
-	if err := scanner.Err(); err != nil {
-		return nil, [2]int{}, 0, err
-	}
-
-	return grid, guardPos, guardDir, nil
+	return part1, part2
 }
 
-func simulateGuardMovement(grid [][]string, guardPos [2]int, guardDir int) int {
-	visited := make(map[string]bool)
-	visitedPositions := 0
+type Position struct {
+	X, Y int
+}
 
-	visitPosition := func(pos [2]int) {
-		posStr := fmt.Sprintf("%d,%d", pos[0], pos[1])
-		if !visited[posStr] {
-			visited[posStr] = true
-			visitedPositions++
+type Direction struct {
+	X, Y int
+	Cell byte
+}
+
+type Grid [][]byte
+
+func (g Grid) findGuard() (byte, int, int) {
+	for y, row := range g {
+		for x, cell := range row {
+			if cell == '^' || cell == 'v' || cell == '<' || cell == '>' {
+				return cell, x, y
+			}
 		}
 	}
+	panic("Guard not found")
+}
 
-	visitPosition(guardPos)
+func (g Grid) at(x, y int) byte {
+	if x < 0 || y < 0 || x >= len(g[0]) || y >= len(g) {
+		return 0
+	}
+	return g[y][x]
+}
 
-	for {
-		x, y := guardPos[0], guardPos[1]
-		dx, dy := directions[guardDir][0], directions[guardDir][1]
-		newPos := [2]int{x + dx, y + dy}
+func parseGrid(input string) Grid {
+	var grid Grid
+	lines := strings.Split(input, "\n")
+	for _, line := range lines {
+		if line != "" {
+			grid = append(grid, []byte(line))
+		}
+	}
+	return grid
+}
 
-		if newPos[0] < 0 || newPos[0] >= len(grid) || newPos[1] < 0 || newPos[1] >= len(grid[newPos[0]]) {
+func trackGuard(grid Grid) (int, bool) {
+	visited := make(map[Position]bool)
+	visitedWithDirection := make(map[Direction]bool)
+
+	cell, x, y := grid.findGuard()
+
+	for x >= 0 && x < len(grid[0]) && y >= 0 && y < len(grid) {
+		if visitedWithDirection[Direction{x, y, cell}] {
+			return len(visited), true
+		}
+
+		visited[Position{x, y}] = true
+		visitedWithDirection[Direction{x, y, cell}] = true
+
+		for {
+			switch cell {
+			case '^':
+				if grid.at(x, y-1) == '#' {
+					cell = '>'
+					continue
+				}
+			case '>':
+				if grid.at(x+1, y) == '#' {
+					cell = 'v'
+					continue
+				}
+			case 'v':
+				if grid.at(x, y+1) == '#' {
+					cell = '<'
+					continue
+				}
+			case '<':
+				if grid.at(x-1, y) == '#' {
+					cell = '^'
+					continue
+				}
+			}
 			break
 		}
-		if grid[newPos[0]][newPos[1]] == "#" {
-			guardDir = (guardDir + 1) % 4
-		} else {
-			guardPos = newPos
-			visitPosition(guardPos)
+
+		switch cell {
+		case '^':
+			y--
+		case '>':
+			x++
+		case 'v':
+			y++
+		case '<':
+			x--
 		}
 	}
 
-	return visitedPositions
-}
-
-func main() {
-	grid, guardPos, guardDir, err := parseInput("../input.txt")
-	if err != nil {
-		fmt.Println("Error reading input:", err)
-		return
-	}
-
-	distinctPositions := simulateGuardMovement(grid, guardPos, guardDir)
-	fmt.Printf("Distinct positions visited: %d\n", distinctPositions)
+	return len(visited), false
 }

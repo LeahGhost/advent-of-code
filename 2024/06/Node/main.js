@@ -1,66 +1,112 @@
 const fs = require('fs');
 
-const directions = [
-  [-1, 0], 
-  [0, 1], 
-  [1, 0], 
-  [0, -1]
-];
-
-function parseInput(filename) {
-  const grid = fs.readFileSync(filename, 'utf8').split('\n');
-  let guardPos = null;
-  let guardDir = 0;
-
-  for (let row = 0; row < grid.length; row++) {
-    for (let col = 0; col < grid[row].length; col++) {
-      const cell = grid[row][col];
-      if (cell === '^') { guardPos = [row, col]; guardDir = 0; }
-      if (cell === '>') { guardPos = [row, col]; guardDir = 1; }
-      if (cell === 'v') { guardPos = [row, col]; guardDir = 2; }
-      if (cell === '<') { guardPos = [row, col]; guardDir = 3; }
-    }
-  }
-
-  return { grid, guardPos, guardDir };
-}
-
-function simulateGuardMovement(grid, guardPos, guardDir) {
-  const visited = new Set();
-  let visitedPositions = 0;
-
-  const visitPosition = (pos) => {
-    const posStr = `${pos[0]},${pos[1]}`;
-    if (!visited.has(posStr)) {
-      visited.add(posStr);
-      visitedPositions++;
-    }
-  };
-
-  visitPosition(guardPos);
-
-  while (true) {
-    const [x, y] = guardPos;
-    const [dx, dy] = directions[guardDir];
-    const newPos = [x + dx, y + dy];
-
-    if (newPos[0] < 0 || newPos[0] >= grid.length || newPos[1] < 0 || newPos[1] >= grid[newPos[0]].length) break;
-
-    if (grid[newPos[0]][newPos[1]] === '#') {
-      guardDir = (guardDir + 1) % 4;
-    } else {
-      guardPos = newPos;
-      visitPosition(guardPos);
-    }
-  }
-
-  return visitedPositions;
-}
-
 function main() {
-  const { grid, guardPos, guardDir } = parseInput('../input.txt');
-  const distinctPositions = simulateGuardMovement(grid, guardPos, guardDir);
-  console.log(`Distinct positions visited: ${distinctPositions}`);
+  const input = fs.readFileSync('../input.txt', 'utf8');
+  const { part1, part2 } = execute(input);
+
+  console.log(`Part 1: ${part1}`);
+  console.log(`Part 2: ${part2}`);
+}
+
+function execute(input) {
+  const grid = parseGrid(input);
+  const part1 = trackGuard(grid).visitedCount;
+
+  let part2 = 0;
+  for (let y = 0; y < grid.length; y++) {
+    for (let x = 0; x < grid[y].length; x++) {
+      if (grid[y][x] === '.') {
+        const updatedGrid = parseGrid(input);
+        updatedGrid[y][x] = '#';
+
+        if (trackGuard(updatedGrid).loopDetected) {
+          part2++;
+        }
+      }
+    }
+  }
+
+  return { part1, part2 };
+}
+
+function parseGrid(input) {
+  return input.split('\n').filter(line => line).map(line => [...line]);
+}
+
+function trackGuard(grid) {
+  const visited = new Set();
+  const visitedWithDirection = new Set();
+
+  let [cell, x, y] = findGuard(grid);
+
+  while (x >= 0 && x < grid[0].length && y >= 0 && y < grid.length) {
+    const positionKey = `${x},${y}`;
+    const directionKey = `${x},${y},${cell}`;
+
+    if (visitedWithDirection.has(directionKey)) {
+      return { visitedCount: visited.size, loopDetected: true };
+    }
+
+    visited.add(positionKey);
+    visitedWithDirection.add(directionKey);
+
+    let turn = true;
+    while (turn) {
+      turn = false;
+
+      switch (cell) {
+        case '^':
+          if (grid[y - 1] && grid[y - 1][x] === '#') {
+            cell = '>';
+            turn = true;
+          }
+          break;
+        case '>':
+          if (grid[y][x + 1] === '#') {
+            cell = 'v';
+            turn = true;
+          }
+          break;
+        case 'v':
+          if (grid[y + 1] && grid[y + 1][x] === '#') {
+            cell = '<';
+            turn = true;
+          }
+          break;
+        case '<':
+          if (grid[y][x - 1] === '#') {
+            cell = '^';
+            turn = true;
+          }
+          break;
+        default:
+          throw new Error("Invalid cell");
+      }
+    }
+
+    switch (cell) {
+      case '^': y--; break;
+      case '>': x++; break;
+      case 'v': y++; break;
+      case '<': x--; break;
+      default:
+        throw new Error("Invalid cell");
+    }
+  }
+
+  return { visitedCount: visited.size, loopDetected: false };
+}
+
+function findGuard(grid) {
+  for (let y = 0; y < grid.length; y++) {
+    for (let x = 0; x < grid[y].length; x++) {
+      if (['^', 'v', '<', '>'].includes(grid[y][x])) {
+        return [grid[y][x], x, y];
+      }
+    }
+  }
+
+  throw new Error("Guard not found");
 }
 
 main();
