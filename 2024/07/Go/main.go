@@ -8,16 +8,32 @@ import (
 	"strings"
 )
 
-func evaluateExpression(numbers []int, target, index, currentResult int) bool {
+func evaluateExpression(numbers []int, target, index, currentResult, part int) bool {
 	if index == len(numbers) {
 		return currentResult == target
 	}
-	addResult := evaluateExpression(numbers, target, index+1, currentResult+numbers[index])
-	multiplyResult := evaluateExpression(numbers, target, index+1, currentResult*numbers[index])
+
+	addResult := evaluateExpression(numbers, target, index+1, currentResult+numbers[index], part)
+	multiplyResult := evaluateExpression(numbers, target, index+1, currentResult*numbers[index], part)
+
+	if part == 2 {
+		concatResult := evaluateExpression(numbers, target, index+1, atoiConcat(currentResult, numbers[index]), part)
+		return addResult || multiplyResult || concatResult
+	}
+
 	return addResult || multiplyResult
 }
 
-func solveCalibration(inputFile string) int {
+func atoiConcat(left, right int) int {
+	return atoi(fmt.Sprintf("%d%d", left, right))
+}
+
+func atoi(s string) int {
+	num, _ := strconv.Atoi(s)
+	return num
+}
+
+func solveCalibration(inputFile string, part int) int {
 	file, _ := os.Open(inputFile)
 	defer file.Close()
 
@@ -33,7 +49,8 @@ func solveCalibration(inputFile string) int {
 		for i, numStr := range numberStrings {
 			numbers[i], _ = strconv.Atoi(numStr)
 		}
-		if evaluateExpression(numbers, target, 1, numbers[0]) {
+
+		if evaluateExpression(numbers, target, 1, numbers[0], part) {
 			totalCalibrationResult += target
 		}
 	}
@@ -43,6 +60,10 @@ func solveCalibration(inputFile string) int {
 
 func main() {
 	inputFile := "../input.txt"
-	result := solveCalibration(inputFile)
-	fmt.Println("Total Calibration Result:", result)
+
+	part1Result := solveCalibration(inputFile, 1)
+	fmt.Println("Part 1 - Total Calibration Result:", part1Result)
+
+	part2Result := solveCalibration(inputFile, 2)
+	fmt.Println("Part 2 - Total Calibration Result:", part2Result)
 }
