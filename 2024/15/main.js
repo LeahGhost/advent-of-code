@@ -1,100 +1,215 @@
 const fs = require('fs');
 
-class GameData {
-  constructor() {
-    this.grid = [];
-    this.moves = [];
-    this.botX = 0;
-    this.botY = 0;
-  }
+function loadInputData(fileName) {
+  return fs.readFileSync(fileName, 'utf8').split('\n');
 }
 
-function loadGame(file) {
-  try {
-    const [gridData, movesData] = fs.readFileSync(file, 'utf-8').split('\n\n');
-    const game = new GameData();
-
-    game.grid = gridData.split('\n').map((line, y) =>
-      line.split('').map((cell, x) => {
-        if (cell === '@') [game.botX, game.botY] = [x, y];
-        return cell;
-      })
-    );
-    game.moves = movesData.trim().split('');
-
-    return game;
-  } catch (err) {
-    console.error('Error reading file:', err);
-    return null;
-  }
-}
-
-function isMovable(obj) {
-  return ['O', '[', ']'].includes(obj);
-}
-
-function shiftBox(game, x, y, dir) {
-  const offsets = { left: [-1, 0], right: [1, 0], up: [0, -1], down: [0, 1] };
-  const [dx, dy] = offsets[dir];
-  const [newX, newY] = [x + dx, y + dy];
-  const obj = game.grid[y][x];
-
-  if (!isMovable(obj) || (isMovable(game.grid[newY][newX]) && !shiftBox(game, newX, newY, dir))) return false;
-
-  if (obj === 'O' && game.grid[newY][newX] === '.') {
-    [game.grid[y][x], game.grid[newY][newX]] = ['.', 'O'];
-    return true;
-  }
-
-  if (obj === ']' && dir === 'left' && game.grid[newY][newX - 1] === '.') {
-    [game.grid[y][x], game.grid[newY][newX - 1]] = ['.', '['];
-    game.grid[newY][newX] = ']';
-    return true;
-  }
-
-  if (obj === '[' && dir === 'right' && game.grid[newY][newX + 1] === '.') {
-    [game.grid[y][x], game.grid[newY][newX + 1]] = ['.', ']'];
-    game.grid[newY][newX] = '[';
-    return true;
-  }
-
-  return false;
-}
-
-function calculateScore(game) {
-  return game.grid.flat().reduce((score, cell, idx) => {
-    if (cell === 'O') {
-      const x = Math.floor(idx / game.grid[0].length);
-      const y = idx % game.grid[0].length;
-      score += 100 * x + y;
+function expandWarehouseLayout(warehouse) {
+  const modified = [];
+  for (const row of warehouse) {
+    const newRow = [];
+    for (const cell of row) {
+      switch (cell) {
+        case '.':
+          newRow.push('.', '.');
+          break;
+        case '#':
+          newRow.push('#', '#');
+          break;
+        case '@':
+          newRow.push('@', '.');
+          break;
+        default:
+          newRow.push('[', ']');
+          break;
+      }
     }
-    return score;
-  }, 0);
+    modified.push(newRow);
+  }
+  return modified;
 }
 
-function moveBot(game) {
-  const directions = { '<': 'left', '>': 'right', '^': 'up', 'v': 'down' };
-  const offsets = { left: [-1, 0], right: [1, 0], up: [0, -1], down: [0, 1] };
+function locateCharacter(target, warehouse) {
+  for (let i = 0; i < warehouse.length; i++) {
+    for (let j = 0; j < warehouse[i].length; j++) {
+      if (warehouse[i][j] === target) {
+        return [i, j];
+      }
+    }
+  }
+  throw new Error(`Character '${target}' not found`);
+}
 
-  for (const move of game.moves) {
-    const dir = directions[move];
-    const [dx, dy] = offsets[dir];
-    const [newX, newY] = [game.botX + dx, game.botY + dy];
+function translateDirectionToSteps(direction) {
+  switch (direction) {
+    case '^':
+      return [-1, 0];
+    case 'v':
+      return [1, 0];
+    case '<':
+      return [0, -1];
+    case '>':
+      return [0, 1];
+    default:
+      throw new Error(`Invalid direction '${direction}'`);
+  }
+}
 
-    shiftBox(game, newX, newY, dir);
+function part1(data) {
+  const [warehouse, instructions] = parseInput(data);
+  let [row, col] = locateCharacter('@', warehouse);
 
-    if (game.grid[newY]?.[newX] === '.') {
-      [game.grid[game.botY][game.botX], game.grid[newY][newX]] = ['.', '@'];
-      [game.botX, game.botY] = [newX, newY];
+  for (const instruction of instructions) {
+    const [dRow, dCol] = translateDirectionToSteps(instruction);
+    let nRow = row + dRow,
+      nCol = col + dCol;
+    let steps = 0;
+
+    while (true) {
+      const newSquare = warehouse[nRow + steps * dRow][nCol + steps * dCol];
+      if (newSquare === 'O') {
+        steps++;
+      } else if (newSquare === '.') {
+        warehouse[row][col] = '.';
+        warehouse[nRow][nCol] = '@';
+        for (let i = 1; i <= steps; i++) {
+          warehouse[nRow + i * dRow][nCol + i * dCol] = 'O';
+        }
+        [row, col] = [nRow, nCol];
+        break;
+      } else if (newSquare === '#') {
+        break;
+      }
     }
   }
 
-  return calculateScore(game);
+  let total = 0;
+  for (let i = 0; i < warehouse.length; i++) {
+    for (let j = 0; j < warehouse[i].length; j++) {
+      if (warehouse[i][j] === 'O') {
+        total += i * 100 + j;
+      }
+    }
+  }
+  return total;
 }
 
-function main() {
-  const game = loadGame('input.txt');
-  if (game) console.log(`Part One: ${moveBot(game)}`);
+function findMovableBlocks(warehouse, instruction, row, col) {
+  const [dRow, dCol] = translateDirectionToSteps(instruction);
+  const newRow = row + dRow,
+    newCol = col + dCol;
+  let blocksToCheck = [];
+
+  if (warehouse[newRow][newCol] === '#') return null;
+  if (warehouse[newRow][newCol] === ']') {
+    blocksToCheck.push([newRow, newCol - 1, newCol]);
+  } else if (warehouse[newRow][newCol] === '[') {
+    blocksToCheck.push([newRow, newCol, newCol + 1]);
+  } else if (warehouse[newRow][newCol] === '.') {
+    return [[row, col]];
+  }
+
+  let blocks = [[row, col]];
+  while (blocksToCheck.length > 0) {
+    const block = blocksToCheck.shift();
+    if (instruction === 'v' || instruction === '^') {
+      if (
+        warehouse[block[0] + dRow][block[1]] === '#' ||
+        warehouse[block[0] + dRow][block[2]] === '#'
+      ) {
+        return null;
+      }
+      if (warehouse[block[0] + dRow][block[1]] === ']') {
+        blocksToCheck.push([block[0] + dRow, block[1] - 1, block[1]]);
+      } else if (warehouse[block[0] + dRow][block[1]] === '[') {
+        blocksToCheck.push([block[0] + dRow, block[1], block[2]]);
+      }
+      if (warehouse[block[0] + dRow][block[2]] === '[') {
+        blocksToCheck.push([block[0] + dRow, block[2], block[2] + 1]);
+      }
+    } else if (instruction === '<') {
+      if (warehouse[block[0]][block[1] - 1] === '#') {
+        return null;
+      } else if (warehouse[block[0]][block[1] - 1] === ']') {
+        blocksToCheck.push([block[0], block[1] - 2, block[1] - 1]);
+      }
+    } else if (instruction === '>') {
+      if (warehouse[block[0]][block[2] + 1] === '#') {
+        return null;
+      } else if (warehouse[block[0]][block[2] + 1] === '[') {
+        blocksToCheck.push([block[0], block[2] + 1, block[2] + 2]);
+      }
+    }
+    blocks.push(block);
+  }
+  return blocks;
 }
 
-main();
+function calculateGPSScore(warehouse) {
+  let total = 0;
+  for (let i = 0; i < warehouse.length; i++) {
+    for (let j = 0; j < warehouse[i].length; j++) {
+      if (warehouse[i][j] === '[') {
+        total += i * 100 + j;
+      }
+    }
+  }
+  return total;
+}
+
+function moveBlocks(warehouse, blocks, instruction) {
+  const [dRow, dCol] = translateDirectionToSteps(instruction);
+  for (let n = blocks.length - 1; n >= 0; n--) {
+    const block = blocks[n];
+    if (block.length === 2) {
+      warehouse[block[0] + dRow][block[1] + dCol] = '@';
+      warehouse[block[0]][block[1]] = '.';
+    } else {
+      warehouse[block[0]][block[1]] = '.';
+      warehouse[block[0]][block[2]] = '.';
+      warehouse[block[0] + dRow][block[1] + dCol] = '[';
+      warehouse[block[0] + dRow][block[2] + dCol] = ']';
+    }
+  }
+}
+
+function part2(data) {
+  let [warehouse, instructions] = parseInput(data);
+  warehouse = expandWarehouseLayout(warehouse);
+  let [rx, ry] = locateCharacter('@', warehouse);
+
+  for (const instruction of instructions) {
+    const blocks = findMovableBlocks(warehouse, instruction, rx, ry);
+
+    if (blocks === null) continue;
+
+    moveBlocks(warehouse, blocks, instruction);
+
+    const [dx, dy] = translateDirectionToSteps(instruction);
+    rx += dx;
+    ry += dy;
+  }
+
+  return calculateGPSScore(warehouse);
+}
+
+function parseInput(data) {
+  let warehouse = [];
+  let j = 0;
+
+  for (let i = 0; i < data.length; i++) {
+    if (data[i] === '') {
+      j = i;
+      break;
+    }
+    warehouse.push(data[i].split(''));
+  }
+
+  const instructions = data.slice(j + 1).join('');
+  return [warehouse, instructions];
+}
+
+const fileName = 'input.txt';
+const data = loadInputData(fileName);
+console.log('Part 1:', part1(data));
+console.log('Part 2:', part2(data));
