@@ -1,107 +1,167 @@
 const fs = require('fs');
-const path = require('path');
 const PriorityQueue = require('js-priority-queue');
 
-function readFileLines(filename) {
-    const filepath = path.join(__dirname, filename);
-    return fs.readFileSync(filepath, 'utf-8').trim().split('\n');
+function readFileLines() {
+    return fs.readFileSync('input.txt', 'utf-8')
+             .split('\n')
+             .filter(str => str !== '')
+             .map(line => line.split(''));
+  }  
+
+function getAlternateDirections(direction) {
+  switch (direction) {
+    case '^': return ['>', '<', 'v'];
+    case '>': return ['^', '<', 'v'];
+    case 'v': return ['^', '>', '<'];
+    case '<': return ['^', '>', 'v'];
+    default: return [];
+  }
 }
 
-function buildGraph(filename) {
-    const lines = readFileLines(filename);
-    const rows = lines.length, cols = lines[0].length;
-    const deltas = { up: [-1, 0], right: [0, 1], down: [1, 0], left: [0, -1] };
-    let graph = {}, start = null, end = null;
-
-    for (let i = 0; i < rows; i++) {
-        for (let j = 0; j < cols; j++) {
-            const char = lines[i][j];
-            const node = `${i},${j}`;
-            if (char === 'S') start = node;
-            if (char === 'E') end = node;
-            if (char === '#') continue;
-
-            graph[node] = [];
-            for (const [dy, dx] of Object.values(deltas)) {
-                const ni = i + dy, nj = j + dx;
-                if (ni >= 0 && ni < rows && nj >= 0 && nj < cols && lines[ni][nj] !== '#') {
-                    graph[node].push(`${ni},${nj}`);
-                }
-            }
-        }
-    }
-    return { graph, start, end };
-}
-
-function direction(from, to) {
-    const [x1, y1] = from.split(',').map(Number);
-    const [x2, y2] = to.split(',').map(Number);
-    if (x2 > x1) return 'down';
-    if (x1 > x2) return 'up';
-    if (y2 > y1) return 'right';
-    return 'left';
-}
-
-function calcWeight(currDir, nextDir) {
-    const cost = {
-        up: { left: 1001, right: 1001, down: 2001, up: 1 },
-        down: { left: 1001, right: 1001, down: 1, up: 2001 },
-        left: { left: 1, right: 2001, down: 1001, up: 1001 },
-        right: { left: 2001, right: 1, down: 1001, up: 1001 }
-    };
-    return cost[currDir][nextDir];
-}
-
-function shortestPath(graph, start, end, initDir = 'right') {
-    const pq = new PriorityQueue({ comparator: (a, b) => a[0] - b[0] });
-    const dist = new Map(), prev = new Map(), visited = new Set();
-    const directions = ['up', 'down', 'left', 'right'];
-
-    directions.forEach(dir => dist.set(`${start},${dir}`, Infinity));
-    dist.set(`${start},${initDir}`, 0);
-    pq.queue([0, start, initDir]);
-
+function calculateNextMove(grid, lab, x, y, direction) {
+    const currentScore = lab[[x, y]]?.[direction] || 0;
+    const possibleMoves = [
+      { move: 'v', x: x + 1, y: y },
+      { move: '^', x: x - 1, y: y },
+      { move: '>', x: x, y: y + 1 },
+      { move: '<', x: x, y: y - 1 }
+    ].filter(({ x, y, move }) => grid[x]?.[y] !== '#' && grid[x][y] !== '#' && move);
+  
+    const pq = new PriorityQueue({ comparator: (a, b) => a.score - b.score });
+  
+    possibleMoves.forEach(({ move, x: newX, y: newY }) => {
+      const newScore = move === direction ? currentScore + 1 : currentScore + 1001;
+      pq.queue({ move, x: newX, y: newY, score: newScore });
+    });
+  
     while (pq.length) {
-        const [cost, node, currDir] = pq.dequeue();
-        if (visited.has(`${node},${currDir}`)) continue;
-        visited.add(`${node},${currDir}`);
-
-        for (const neighbor of graph[node]) {
-            const nextDir = direction(node, neighbor);
-            const weight = calcWeight(currDir, nextDir);
-            const newCost = cost + weight;
-            const key = `${neighbor},${nextDir}`;
-
-            if (newCost < (dist.get(key) || Infinity)) {
-                dist.set(key, newCost);
-                prev.set(key, `${node},${currDir}`);
-                pq.queue([newCost, neighbor, nextDir]);
-            }
-        }
+      const { move, x: newX, y: newY, score } = pq.dequeue();
+      const existingScore = lab[[newX, newY]]?.[move];
+      if (!existingScore || score < existingScore) {
+        lab[[newX, newY]] = { ...lab[[newX, newY]], [move]: score };
+        updateAlternateDirections(lab, newX, newY, score + 1000, move);
+        calculateNextMove(grid, lab, newX, newY, move);
+      }
     }
-
-    let [minCost, bestDir] = directions.map(dir => [dist.get(`${end},${dir}`) || Infinity, dir]).reduce((a, b) => a[0] < b[0] ? a : b);
-    if (minCost === Infinity) return { path: [], cost: Infinity };
-
-    const path = [];
-    let state = `${end},${bestDir}`;
-    while (state) {
-        const [node] = state.split(',');
-        path.push(node);
-        state = prev.get(state);
+  }
+  
+function updateAlternateDirections(lab, x, y, score, direction) {
+  getAlternateDirections(direction).forEach(otherMove => {
+    lab[[x, y]] = lab[[x, y]] || {};
+    const oldScore = lab[[x, y]][otherMove];
+    if (oldScore !== undefined && score < oldScore) {
+      lab[[x, y]][otherMove] = score;
+    } else if (oldScore === undefined) {
+      lab[[x, y]][otherMove] = score;
     }
-
-    return { path: path.reverse(), cost: minCost };
+  });
 }
 
-function part1(file = 'input.txt') {
-    const start = Date.now();
-    const { graph, start: startNode, end } = buildGraph(file);
-    const { path, cost } = shortestPath(graph, startNode, end);
-    console.log(`Part 1: ${cost}`);
-    return cost;
+function initaliseLab(grid) {
+  let startX, startY;
+  grid.forEach((row, i) => {
+    row.forEach((cell, j) => {
+      if (cell === 'S') {
+        startX = i;
+        startY = j;
+      }
+    });
+  });
+
+  const lab = {};
+  lab[[startX, startY]] = { '>': 0 };
+  calculateNextMove(grid, lab, startX, startY, '>');
+  return lab;
 }
 
-if (require.main === module) {
-    part1();
+function getMinimalScoreToEnd(grid, lab) {
+  let endX, endY;
+  grid.forEach((row, i) => {
+    row.forEach((cell, j) => {
+      if (cell === 'E') {
+        endX = i;
+        endY = j;
+      }
+    });
+  });
+
+  const scores = lab[[endX, endY]];
+  return scores ? Math.min(...Object.values(scores)) : -1;
 }
+
+function getPreviousCoordinates(x, y, direction) {
+  switch (direction) {
+    case '^': return [x + 1, y];
+    case '>': return [x, y - 1];
+    case '<': return [x, y + 1];
+    case 'v': return [x - 1, y];
+    default: return [-1, -1];
+  }
+}
+
+function findDirectionToPreviousCell(x, y, nextX, nextY) {
+  if (x === nextX + 1) return '^';
+  if (x === nextX - 1) return 'v';
+  if (y === nextY + 1) return '<';
+  if (y === nextY - 1) return '>';
+  return '';
+}
+
+function getInitialDirectionAndCoords(grid, lab) {
+  let endX, endY;
+  grid.forEach((row, i) => {
+    row.forEach((cell, j) => {
+      if (cell === 'E') {
+        endX = i;
+        endY = j;
+      }
+    });
+  });
+
+  const scores = lab[[endX, endY]];
+  const minScore = Math.min(...Object.values(scores));
+  const previousCoords = Object.entries(scores)
+    .filter(([key, score]) => score === minScore)
+    .map(([key]) => getPreviousCoordinates(endX, endY, key));
+
+  return [endX, endY, previousCoords];
+}
+
+function tracePathToStart(grid, lab, x, y, prevX, prevY) {
+    const direction = findDirectionToPreviousCell(x, y, prevX, prevY);
+    const currentScore = lab[[x, y]]?.[direction] || 0;
+    grid[x][y] = 'O';
+  
+    const directions = [
+      { dx: 1, dy: 0, move: '^' },
+      { dx: -1, dy: 0, move: 'v' },
+      { dx: 0, dy: 1, move: '<' },
+      { dx: 0, dy: -1, move: '>' },
+    ];
+  
+    directions.forEach(({ dx, dy, move }) => {
+      if (grid[x + dx]?.[y + dy] !== '#' && lab[[x + dx, y + dy]]?.[move] === currentScore - (move === direction ? 1 : 1001)) {
+        grid[x + dx][y + dy] = 'O';
+        tracePathToStart(grid, lab, x + dx, y + dy, x, y);
+      }
+    });
+  }
+  
+function calculateChecksum(grid) {
+  return grid.reduce((sum, row) => sum + row.filter(c => ['O', 'E', 'S'].includes(c)).length, 0);
+}
+
+function main() {
+  const grid = readFileLines();
+  const lab = initaliseLab(grid);
+  console.log('Part 1:', getMinimalScoreToEnd(grid, lab));
+
+  const [endX, endY, previousCoords] = getInitialDirectionAndCoords(grid, lab);
+  previousCoords.forEach(([prevX, prevY]) => {
+    tracePathToStart(grid, lab, prevX, prevY, endX, endY);
+  });
+
+  console.log('Part 2:', calculateChecksum(grid));
+}
+
+main();
